@@ -5,7 +5,7 @@ const schema = new Schema(
     status: {
       type: String,
       default: "pending",
-      enum: ["pending", "accepted", "rejected"],
+      enum: ["pending", "accepted"],
     },
 
     sender: {
@@ -13,6 +13,7 @@ const schema = new Schema(
       ref: "User",
       required: true,
     },
+    
     receiver: {
       type: Types.ObjectId,
       ref: "User",

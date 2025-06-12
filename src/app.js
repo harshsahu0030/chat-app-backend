@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import errorMiddleware from "./middlewares/error.middleware.js";
 
 const app = express();
 
@@ -22,7 +23,11 @@ app.use(
 );
 
 //routes import
+import userRoute from "./routes/user.route.js";
 
 //routes declaration
+app.use("/api/v1/user", userRoute);
+
+app.use(errorMiddleware);
 
 export default app;

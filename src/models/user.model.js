@@ -1,6 +1,7 @@
 import mongoose, { Schema, model } from "mongoose";
-import { hash } from "bcrypt";
+import { hash, compare } from "bcrypt";
 import validator from "validator";
+import jwt from "jsonwebtoken";
 
 const schema = new Schema(
   {
@@ -11,7 +12,6 @@ const schema = new Schema(
     },
     bio: {
       type: String,
-      required: true,
     },
     username: {
       type: String,
@@ -57,11 +57,9 @@ const schema = new Schema(
     avatar: {
       public_id: {
         type: String,
-        required: true,
       },
       url: {
         type: String,
-        required: true,
       },
     },
     isVerified: {
@@ -93,12 +91,16 @@ schema.pre("save", async function (next) {
   this.password = await hash(this.password, 10);
 });
 
-userSchema.methods.generateAccessToken = function () {
+schema.methods.isPasswordCorrect = async function (password) {
+  return await compare(password, this.password);
+};
+
+schema.methods.generateAccessToken = function () {
   return jwt.sign(
     {
       _id: this._id,
     },
-    process.env. ,
+    process.env.ACCESS_TOKEN_SECRET,
     {
       expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
     }
