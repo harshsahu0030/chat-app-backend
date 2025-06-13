@@ -1,36 +1,32 @@
 import express from "express";
-import {
-  getMyProfile,
-  loginUser,
-  logoutUser,
-  registerUser,
-  updateMyProfile,
-  verifyUser,
-} from "../controllers/user.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
-import { upload } from "../middlewares/multer.middleware.js";
+import {
+  acceptFriendRequest,
+  getFriendRequests,
+  getFriendsList,
+  getUserById,
+  getUsers,
+  rejectFriendRequest,
+  removeFriend,
+  sendFriendRequest,
+} from "../controllers/user.controller.js";
 
 const router = express.Router();
 
-router.route("/register").post(registerUser);
+router.route("/users").get(verifyJWT, getUsers);
 
-router.route("/verify/:id").get(verifyUser);
+router.route("/user/:id").get(verifyJWT, getUserById);
 
-router.route("/login").post(loginUser);
+router.route("/friends").get(verifyJWT, getFriendsList);
 
-router.route("/me").get(verifyJWT, getMyProfile);
+router.route("/friend/requests").get(verifyJWT, getFriendRequests);
 
-router.route("/logout").get(verifyJWT, logoutUser);
+router.route("/friend/request/send").post(verifyJWT, sendFriendRequest);
 
-router.route("/profile/update").put(
-  verifyJWT,
-  upload.fields([
-    {
-      name: "avatar",
-      maxCount: 1,
-    },
-  ]),
-  updateMyProfile
-);
+router.route("/friend/request/accept").post(verifyJWT, acceptFriendRequest);
+
+router.route("/friend/request/reject").post(verifyJWT, rejectFriendRequest);
+
+router.route("/friend/remove").post(verifyJWT, removeFriend);
 
 export default router;

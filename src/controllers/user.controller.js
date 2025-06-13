@@ -1,213 +1,245 @@
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { Friend } from "../models/friend.model.js";
 import { User } from "../models/user.model.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
-import { sendEmail } from "../utils/sendEmail.js";
-import {
-  destroyOnCloudinary,
-  uploadOnCloudinary,
-} from "../utils/cloudinary.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import ApiFeatures from "../utils/features.js";
 
-export const registerUser = asyncHandler(async (req, res) => {
-  const { name, username, email, password } = req.body;
+export const getUsers = asyncHandler(async (req, res) => {
+  let apiFeatures = new ApiFeatures(
+    User.find(
+      { _id: { $ne: req.user._id } },
+      { name: 1, username: 1, avatar: 1 }
+    ).lean(),
+    req.query
+  ).search();
 
-  // Validate input
-  if (!name || !username || !email || !password) {
-    throw new ApiError(400, "Please provide all required fields");
+  let users = await apiFeatures.query;
+
+  return res.status(200).json(new ApiResponse(200, users, "User fetched"));
+});
+
+export const getUserById = asyncHandler(async (req, res, next) => {
+  const userId = req.params.id;
+  if (!userId) {
+    return next(new ApiError(400, "User ID is required"));
   }
 
-  // Check if user already exists
-  const user = await User.findOne({
-    $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }],
-  });
+  const user = await User.findById(
+    { _id: userId },
+    {
+      name: 1,
+      username: 1,
+      avatar: 1,
+      bio: 1,
+      email: 1,
+      createdAt: 1,
+      private: 1,
+    }
+  );
 
-  // If user exists and is not verified, resend verification email
-  if (!user.isVerified) {
-    const subject =
-      "Please verify your email address by clicking the link below:";
+  const relation = await Friend.findOne({ user: req.user._id }).lean();
 
-    const verificationLink = `${req.protocol}://${req.get(
-      "host"
-    )}/api/v1/user/verify/${user._id}`;
-
-    const text = `Hello ${user.name},\n\nPlease verify your email address by clicking the link below:\n${verificationLink}\n\nThank you!`;
-
-    // Resend verification email
-    await sendEmail({
-      email: user.email,
-      subject,
-      text,
-    });
-
-    return res
-      .status(201)
-      .json(
-        new ApiResponse(
-          201,
-          user,
-          "Email sent again! Please verify your email address."
-        )
-      );
+  let status = "none";
+  if (relation?.friends.includes(userId)) {
+    status = "friend";
+  } else if (relation?.requests.includes(userId)) {
+    status = "request";
+  } else if (relation?.sendRequests.includes(userId)) {
+    status = "sendRequest";
   }
-
-  // If user exists and is verified, throw an error
-  if (user) {
-    throw new ApiError(400, "User with this email or username already exists");
-  }
-
-  user = await User.create(req.body);
-
-  const subject =
-    "Please verify your email address by clicking the link below:";
-
-  const verificationLink = `${req.protocol}://${req.get(
-    "host"
-  )}/api/v1/user/verify/${user._id}`;
-
-  const text = `Hello ${user.name},\n\nPlease verify your email address by clicking the link below:\n${verificationLink}\n\nThank you!`;
 
   if (!user) {
-    throw new ApiError(500, "Internal Server Error: Please try again");
+    return next(new ApiError(404, "User not found"));
   }
 
-  // verification email
-  await sendEmail({
-    email: user.email,
-    subject,
-    text,
-  });
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { user, status }, "User fetched successfully"));
+});
+
+export const getFriendsList = asyncHandler(async (req, res) => {
+  const friendDoc = await Friend.findOne({ user: req.user._id }).lean();
+
+  if (!friendDoc || !friendDoc.friends?.length) {
+    return res.status(200).json(new ApiResponse(200, [], "No friends found"));
+  }
+
+  let apiFeatures = new ApiFeatures(
+    User.find(
+      { _id: { $in: friendDoc.friends } },
+      { name: 1, username: 1, avatar: 1 }
+    ).lean(),
+    req.query
+  ).search();
+
+  const friends = await apiFeatures.query;
 
   return res
-    .status(201)
+    .status(200)
+    .json(new ApiResponse(200, friends, "Friends fetched successfully"));
+});
+
+export const getFriendRequests = asyncHandler(async (req, res) => {
+  const friendRequests = await Friend.find({
+    user: req.user._id,
+  })
+    .populate("requests", "name username avatar")
+    .lean();
+
+  return res
+    .status(200)
     .json(
       new ApiResponse(
-        201,
-        user,
-        "Email sent! Please verify your email address."
+        200,
+        friendRequests,
+        "Friend requests fetched successfully"
       )
     );
 });
 
-export const verifyUser = asyncHandler(async (req, res) => {
-  const { id } = req.params;
+export const sendFriendRequest = asyncHandler(async (req, res, next) => {
+  const { userId } = req.body;
 
-  // Find user by ID and verify
-  const user = await User.findById(id);
-  if (!user) {
-    throw new ApiError(404, "User not found");
+  if (!userId) {
+    return next(new ApiError(400, "User ID is required"));
   }
 
-  user.isVerified = true;
-  await user.save();
+  if (userId === req.user._id.toString()) {
+    return next(
+      new ApiError(400, "You cannot send a friend request to yourself")
+    );
+  }
+
+  const userDoc = await Friend.findOneAndUpdate(
+    { user: req.user._id },
+    { $addToSet: { sendRequests: userId } },
+    { new: true, upsert: true }
+  );
+
+  const friendDoc = await Friend.findOneAndUpdate(
+    { user: userId },
+    { $addToSet: { requests: req.user._id } },
+    { new: true, upsert: true }
+  );
+
+  if (!friendDoc || !userDoc) {
+    return next(new ApiError(500, "Failed to send"));
+  }
+
+  return res.status(200).json(new ApiResponse(200, null, "Request sent"));
+});
+
+export const acceptFriendRequest = asyncHandler(async (req, res, next) => {
+  const { userId } = req.body;
+
+  if (!userId) {
+    return next(new ApiError(400, "User ID is required"));
+  }
+
+  if (userId === req.user._id.toString()) {
+    return next(
+      new ApiError(400, "You cannot accept a friend request from yourself")
+    );
+  }
+
+  const userDoc = await Friend.findOneAndUpdate(
+    { user: req.user._id },
+    {
+      $pull: { requests: userId },
+      $addToSet: { friends: userId },
+    },
+    { new: true }
+  );
+
+  const friendDoc = await Friend.findOneAndUpdate(
+    { user: userId },
+    {
+      $pull: { sendRequests: req.user._id },
+      $addToSet: { friends: req.user._id },
+    },
+    { new: true }
+  );
+
+  if (!friendDoc || !userDoc) {
+    return next(new ApiError(500, "Failed to accept friend request"));
+  }
 
   return res
     .status(200)
-    .json(new ApiResponse(200, user, "User verified successfully"));
+    .json(new ApiResponse(200, null, "Friend request accepted"));
 });
 
-export const loginUser = asyncHandler(async (req, res) => {
-  const { input, password } = req.body;
+export const rejectFriendRequest = asyncHandler(async (req, res, next) => {
+  const { userId } = req.body;
 
-  // Validate input
-  if (!input || !password) {
-    throw new ApiError(400, "Please provide all required fields");
+  if (!userId) {
+    return next(new ApiError(400, "User ID is required"));
   }
 
-  // Check if user already exists
-  const user = await User.findOne({
-    $or: [{ email: input.toLowerCase() }, { username: input.toLowerCase() }],
-  }).select("+password");
-
-  if (!user) {
-    throw new ApiError(404, "User not with this email or username found");
+  if (userId === req.user._id.toString()) {
+    return next(
+      new ApiError(400, "You cannot reject a friend request from yourself")
+    );
   }
 
-  // Check if user is verified
-  if (!user.isVerified) {
-    const subject =
-      "Please verify your email address by clicking the link below:";
+  const userDoc = await Friend.findOneAndUpdate(
+    { user: req.user._id },
+    {
+      $pull: { requests: userId },
+    },
+    { new: true }
+  );
 
-    const verificationLink = `${req.protocol}://${req.get(
-      "host"
-    )}/api/v1/user/verify/${user._id}`;
+  const friendDoc = await Friend.findOneAndUpdate(
+    { user: userId },
+    {
+      $pull: { sendRequests: req.user._id },
+    },
+    { new: true }
+  );
 
-    const text = `Hello ${user.name},\n\nPlease verify your email address by clicking the link below:\n${verificationLink}\n\nThank you!`;
-
-    // Resend verification email
-    await sendEmail({
-      email: user.email,
-      subject,
-      text,
-    });
-
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          user,
-          "Email sent again! Please verify your email address."
-        )
-      );
+  if (!friendDoc || userDoc) {
+    return next(new ApiError(500, "Failed to reject friend request"));
   }
-
-  // Check if password is correct
-  const isPasswordCorrect = await user.isPasswordCorrect(password);
-
-  if (!isPasswordCorrect) {
-    throw new ApiError(401, "Invalid email or password");
-  }
-
-  // Generate access token
-  const accessToken = user.generateAccessToken();
 
   return res
     .status(200)
-    .cookie("accessToken", accessToken)
-    .json(new ApiResponse(200, { user }, "Login successful"));
+    .json(new ApiResponse(200, friendDoc, "Friend request rejected"));
 });
 
-export const logoutUser = asyncHandler(async (req, res) => {
-  return res
-    .status(200)
-    .cookie("accessToken", null, {
-      expires: new Date(Date.now()),
-      httpOnly: true,
-    })
-    .json(new ApiResponse(200, null, "Logout successful"));
-});
+export const removeFriend = asyncHandler(async (req, res, next) => {
+  const { userId } = req.body;
 
-export const getMyProfile = asyncHandler(async (req, res, next) => {
-  const user = await User.findById(req.user);
-
-  if (!user) return next(new ApiError(404, "User not found"));
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, user, "User profile fetched successfully"));
-});
-
-export const updateMyProfile = asyncHandler(async (req, res, next) => {
-  if (req.files?.avatar?.path) {
-    if (req.user.avatar?.public_id) {
-      await destroyOnCloudinary(req.user.avatar?.public_id);
-    }
-
-    let result = await uploadOnCloudinary(req.files?.avatar[0]?.path);
-
-    req.body.avatar = {
-      public_id: result.public_id,
-      url: result.secure_url,
-    };
+  if (!userId) {
+    return next(new ApiError(400, "User ID is required"));
   }
 
-  let user = await User.findByIdAndUpdate(req.user._id, req.body, {
-    new: true,
-    runValidators: true,
-    useFindAndModify: false,
-  });
+  if (userId === req.user._id.toString()) {
+    return next(new ApiError(400, "You cannot remove yourself as a friend"));
+  }
 
-  res
+  const userDoc = await Friend.findOneAndUpdate(
+    { user: req.user._id },
+    {
+      $pull: { friends: userId },
+    },
+    { new: true }
+  );
+
+  const friendDoc = await Friend.findOneAndUpdate(
+    { user: userId },
+    {
+      $pull: { friends: req.user._id },
+    },
+    { new: true }
+  );
+
+  if (!friendDoc || userDoc) {
+    return next(new ApiError(500, "Failed to remove friend"));
+  }
+
+  return res
     .status(200)
-    .json(new ApiResponse(200, user, "User profile updated successfully"));
+    .json(new ApiResponse(200, friendDoc, "Friend removed successfully"));
 });

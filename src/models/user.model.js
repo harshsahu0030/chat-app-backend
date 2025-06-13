@@ -6,20 +6,20 @@ import jwt from "jsonwebtoken";
 const schema = new Schema(
   {
     name: {
-      index: true,
       type: String,
       required: true,
     },
+
     bio: {
       type: String,
     },
+
     username: {
       type: String,
       required: [true, "Username is required"],
       unique: true,
       lowercase: true,
       trim: true,
-      index: true,
       validate: {
         validator: function (v) {
           return (
@@ -29,17 +29,17 @@ const schema = new Schema(
         message: (props) => `${props.value} is not a valid username!`,
       },
     },
+
     email: {
       type: String,
       required: [true, "Email is required"],
-      unique: true,
-      lowecase: true,
       trim: true,
       validate: {
         validator: validator.isEmail,
         message: "Please provide a valid email",
       },
     },
+
     password: {
       type: String,
       select: false,
@@ -62,20 +62,29 @@ const schema = new Schema(
         type: String,
       },
     },
+
     isVerified: {
       type: Boolean,
       default: false,
     },
+
+    private: {
+      type: Boolean,
+      default: false,
+    },
+
     isAdmin: {
       type: Boolean,
       default: false,
       select: false,
     },
+
     accessToken: {
       type: String,
       select: false,
     },
-    resetToken: {
+
+    refreshToken: {
       type: String,
       select: false,
     },
@@ -84,6 +93,12 @@ const schema = new Schema(
     timestamps: true,
   }
 );
+
+//indexes
+schema.index({ email: 1 }, { unique: true });
+
+// Compound index example
+schema.index({ username: 1, name: 1 });
 
 schema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
@@ -105,6 +120,23 @@ schema.methods.generateAccessToken = function () {
       expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
     }
   );
+};
+
+schema.methods.generateRefreshToken = function () {
+  let token = jwt.sign(
+    {
+      _id: this._id,
+    },
+    process.env.REFRESH_TOKEN_SECRET,
+    {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
+    }
+  );
+
+  this.refreshToken = token;
+  this.save();
+
+  return token;
 };
 
 export const User = mongoose.models.User || model("User", schema);

@@ -23,10 +23,12 @@ app.use(
 );
 
 //routes import
+import authRoute from "./routes/auth.route.js";
 import userRoute from "./routes/user.route.js";
 
 //routes declaration
-app.use("/api/v1/user", userRoute);
+app.use("/api/v1/auth", authRoute);
+app.use("/api/v1", userRoute);
 
 app.use(errorMiddleware);
 
