@@ -22,7 +22,7 @@ const schema = new Schema(
       ref: "User",
       required: true,
     },
-    
+
     chat: {
       type: Types.ObjectId,
       ref: "Chat",

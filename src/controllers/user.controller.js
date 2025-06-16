@@ -5,7 +5,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import ApiFeatures from "../utils/features.js";
 
-export const getUsers = asyncHandler(async (req, res) => {
+export const getUsers = asyncHandler(async (req, res, next) => {
   let apiFeatures = new ApiFeatures(
     User.find(
       { _id: { $ne: req.user._id } },
@@ -21,9 +21,6 @@ export const getUsers = asyncHandler(async (req, res) => {
 
 export const getUserById = asyncHandler(async (req, res, next) => {
   const userId = req.params.id;
-  if (!userId) {
-    return next(new ApiError(400, "User ID is required"));
-  }
 
   const user = await User.findById(
     { _id: userId },
@@ -58,7 +55,7 @@ export const getUserById = asyncHandler(async (req, res, next) => {
     .json(new ApiResponse(200, { user, status }, "User fetched successfully"));
 });
 
-export const getFriendsList = asyncHandler(async (req, res) => {
+export const getFriendsList = asyncHandler(async (req, res, next) => {
   const friendDoc = await Friend.findOne({ user: req.user._id }).lean();
 
   if (!friendDoc || !friendDoc.friends?.length) {
@@ -80,7 +77,7 @@ export const getFriendsList = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, friends, "Friends fetched successfully"));
 });
 
-export const getFriendRequests = asyncHandler(async (req, res) => {
+export const getFriendRequests = asyncHandler(async (req, res, next) => {
   const friendRequests = await Friend.find({
     user: req.user._id,
   })
@@ -101,10 +98,6 @@ export const getFriendRequests = asyncHandler(async (req, res) => {
 export const sendFriendRequest = asyncHandler(async (req, res, next) => {
   const { userId } = req.body;
 
-  if (!userId) {
-    return next(new ApiError(400, "User ID is required"));
-  }
-
   if (userId === req.user._id.toString()) {
     return next(
       new ApiError(400, "You cannot send a friend request to yourself")
@@ -112,13 +105,19 @@ export const sendFriendRequest = asyncHandler(async (req, res, next) => {
   }
 
   const userDoc = await Friend.findOneAndUpdate(
-    { user: req.user._id },
+    {
+      user: req.user._id,
+      friends: { $ne: userId },
+    },
     { $addToSet: { sendRequests: userId } },
     { new: true, upsert: true }
   );
 
   const friendDoc = await Friend.findOneAndUpdate(
-    { user: userId },
+    {
+      user: userId,
+      friends: { $ne: req.user._id },
+    },
     { $addToSet: { requests: req.user._id } },
     { new: true, upsert: true }
   );
@@ -133,10 +132,6 @@ export const sendFriendRequest = asyncHandler(async (req, res, next) => {
 export const acceptFriendRequest = asyncHandler(async (req, res, next) => {
   const { userId } = req.body;
 
-  if (!userId) {
-    return next(new ApiError(400, "User ID is required"));
-  }
-
   if (userId === req.user._id.toString()) {
     return next(
       new ApiError(400, "You cannot accept a friend request from yourself")
@@ -144,18 +139,26 @@ export const acceptFriendRequest = asyncHandler(async (req, res, next) => {
   }
 
   const userDoc = await Friend.findOneAndUpdate(
-    { user: req.user._id },
     {
-      $pull: { requests: userId },
+      user: req.user._id,
+      friends: { $ne: userId },
+      requests: { $in: [userId] },
+    },
+    {
+      $pull: { requests: userId, sendRequests: userId },
       $addToSet: { friends: userId },
     },
     { new: true }
   );
 
   const friendDoc = await Friend.findOneAndUpdate(
-    { user: userId },
     {
-      $pull: { sendRequests: req.user._id },
+      user: userId,
+      friends: { $ne: req.user._id },
+      sendRequests: { $in: [req.user._id] },
+    },
+    {
+      $pull: { sendRequests: req.user._id, requests: req.user._id },
       $addToSet: { friends: req.user._id },
     },
     { new: true }
@@ -173,10 +176,6 @@ export const acceptFriendRequest = asyncHandler(async (req, res, next) => {
 export const rejectFriendRequest = asyncHandler(async (req, res, next) => {
   const { userId } = req.body;
 
-  if (!userId) {
-    return next(new ApiError(400, "User ID is required"));
-  }
-
   if (userId === req.user._id.toString()) {
     return next(
       new ApiError(400, "You cannot reject a friend request from yourself")
@@ -184,7 +183,11 @@ export const rejectFriendRequest = asyncHandler(async (req, res, next) => {
   }
 
   const userDoc = await Friend.findOneAndUpdate(
-    { user: req.user._id },
+    {
+      user: req.user._id,
+      friends: { $ne: userId },
+      requests: { $in: [userId] },
+    },
     {
       $pull: { requests: userId },
     },
@@ -192,7 +195,7 @@ export const rejectFriendRequest = asyncHandler(async (req, res, next) => {
   );
 
   const friendDoc = await Friend.findOneAndUpdate(
-    { user: userId },
+    { user: userId, friends: { $ne: userId }, sendRequests: { $in: [userId] } },
     {
       $pull: { sendRequests: req.user._id },
     },
@@ -210,10 +213,6 @@ export const rejectFriendRequest = asyncHandler(async (req, res, next) => {
 
 export const removeFriend = asyncHandler(async (req, res, next) => {
   const { userId } = req.body;
-
-  if (!userId) {
-    return next(new ApiError(400, "User ID is required"));
-  }
 
   if (userId === req.user._id.toString()) {
     return next(new ApiError(400, "You cannot remove yourself as a friend"));

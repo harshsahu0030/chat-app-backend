@@ -2,22 +2,37 @@ import mongoose, { Schema, model, Types } from "mongoose";
 
 const schema = new Schema(
   {
-    name: {
-      type: String,
-      required: true,
+    members: [{ type: Types.ObjectId, ref: "User" }],
+
+    isGroupChat: { type: Boolean, default: false },
+
+    groupName: String,
+
+    avatar: {
+      public_id: {
+        type: String,
+      },
+      url: {
+        type: String,
+      },
     },
-    groupChat: {
-      type: Boolean,
-      default: false,
+
+    lastMessage: {
+      type: Types.ObjectId,
+      ref: "Message",
     },
-    creator: {
+
+    createdBy: {
       type: Types.ObjectId,
       ref: "User",
+      required: true,
     },
-    members: [
+
+    admin: [
       {
         type: Types.ObjectId,
         ref: "User",
+        required: true,
       },
     ],
   },
@@ -25,5 +40,7 @@ const schema = new Schema(
     timestamps: true,
   }
 );
+
+schema.index({ participants: 1 });
 
 export const Chat = mongoose.models.Chat || model("Chat", schema);

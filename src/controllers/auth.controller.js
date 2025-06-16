@@ -15,12 +15,12 @@ import {
 } from "../utils/helpers.js";
 import { Friend } from "../models/friend.model.js";
 
-export const registerUser = asyncHandler(async (req, res) => {
+export const registerUser = asyncHandler(async (req, res, next) => {
   const { name, username, email, password } = req.body;
 
   // Validate input
   if (!name || !username || !email || !password) {
-    throw new ApiError(400, "Please provide all required fields");
+    return next(new ApiError(400, "Please provide all required fields"));
   }
 
   // Check if user already exists
@@ -35,20 +35,22 @@ export const registerUser = asyncHandler(async (req, res) => {
 
   // If user exists and is verified, throw an error
   if (user) {
-    throw new ApiError(400, "User with this email or username already exists");
+    return next(
+      new ApiError(400, "User with this email or username already exists")
+    );
   }
 
   user = await User.create(req.body);
 
   if (!user) {
-    throw new ApiError(500, "Internal Server Error: Please try again");
+    return next(new ApiError(500, "Internal Server Error: Please try again"));
   }
 
   // verification email
   await verfifyUser(res, user);
 });
 
-export const verifyUser = asyncHandler(async (req, res) => {
+export const verifyUser = asyncHandler(async (req, res, next) => {
   const { token } = req.params;
 
   const decodedToken = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
@@ -58,7 +60,7 @@ export const verifyUser = asyncHandler(async (req, res) => {
 
   // Check if refresh token is valid
   if (!user || user.refreshToken !== token) {
-    throw new ApiError(401, "Invalid or expired token");
+    return next(new ApiError(401, "Invalid or expired token"));
   }
 
   user.isVerified = true;
@@ -72,12 +74,12 @@ export const verifyUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, { user }, "User verified successfully"));
 });
 
-export const loginUser = asyncHandler(async (req, res) => {
+export const loginUser = asyncHandler(async (req, res, next) => {
   const { input, password } = req.body;
 
   // Validate input
   if (!input || !password) {
-    throw new ApiError(400, "Please provide all required fields");
+    return next(new ApiError(400, "Please provide all required fields"));
   }
 
   // Check if user already exists
@@ -86,7 +88,9 @@ export const loginUser = asyncHandler(async (req, res) => {
   }).select("+password");
 
   if (!user) {
-    throw new ApiError(404, "User not with this email or username found");
+    return next(
+      new ApiError(404, "User not with this email or username found")
+    );
   }
 
   // Check if user is verified
@@ -98,7 +102,7 @@ export const loginUser = asyncHandler(async (req, res) => {
   const isPasswordCorrect = await user.isPasswordCorrect(password);
 
   if (!isPasswordCorrect) {
-    throw new ApiError(401, "Invalid email or password");
+    return next(new ApiError(401, "Invalid email or password"));
   }
 
   // Generate access token
@@ -153,31 +157,31 @@ export const updateMyProfile = asyncHandler(async (req, res, next) => {
   res.status(200).json(new ApiResponse(200, user, "User profile updated"));
 });
 
-export const forgotPassword = asyncHandler(async (req, res) => {
-  const { email } = req.body;
+export const forgotPassword = asyncHandler(async (req, res, next) => {
+  const { email } = req.body;   
 
   // Validate input
   if (!email) {
-    throw new ApiError(400, "Please provide an email address");
+    return next(new ApiError(400, "Please provide an email address"));
   }
 
   // Check if user exists
   const user = await User.findOne({ email: email.toLowerCase() });
 
   if (!user) {
-    throw new ApiError(404, "User with this email not found");
+    return next(new ApiError(404, "User with this email not found"));
   }
 
   await forgotPasswordUser(res, user);
 });
 
-export const resetPassword = asyncHandler(async (req, res) => {
+export const resetPassword = asyncHandler(async (req, res, next) => {
   const { token } = req.params;
   const { password, confirmPassword } = req.body;
 
-  // Check if passwords match
+  // Check if passwords match       
   if (password !== confirmPassword) {
-    throw new ApiError(400, "Passwords do not match");
+    return next(new ApiError(400, "Passwords do not match"));
   }
 
   const decodedToken = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
@@ -187,7 +191,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   // Check if refresh token is valid
   if (!user || user.refreshToken !== token) {
-    throw new ApiError(401, "Invalid or expired token");
+    return next(new ApiError(401, "Invalid or expired token"));
   }
 
   // Allow user to reset password

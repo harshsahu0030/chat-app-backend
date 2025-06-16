@@ -11,14 +11,26 @@ import {
 } from "../controllers/auth.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/multer.middleware.js";
+import {
+  forgotPasswordValidator,
+  loginValidator,
+  registerValidator,
+  resetPasswordValidator,
+  validateHandler,
+  verifyUserValidator,
+} from "../lib/validators.js";
 
 const router = express.Router();
 
-router.route("/register").post(registerUser);
+router
+  .route("/register")
+  .post(registerValidator(), validateHandler, registerUser);
 
-router.route("/verify/:token").get(verifyUser);
+router
+  .route("/verify/:token")
+  .get(verifyUserValidator(), validateHandler, verifyUser);
 
-router.route("/login").post(loginUser);
+router.route("/login").post(loginValidator(), validateHandler, loginUser);
 
 router.route("/profile/update").put(
   verifyJWT,
@@ -31,9 +43,13 @@ router.route("/profile/update").put(
   updateMyProfile
 );
 
-router.route("/password/forgot").post(forgotPassword);
+router
+  .route("/password/forgot")
+  .post(forgotPasswordValidator(), validateHandler, forgotPassword);
 
-router.route("/password/reset/:token").put(resetPassword);
+router
+  .route("/password/reset/:token")
+  .put(resetPasswordValidator(), validateHandler, resetPassword);
 
 router.route("/me").get(verifyJWT, getMyProfile);
 
