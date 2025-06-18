@@ -38,7 +38,7 @@ import chatRoute from "./routes/chat.route.js";
 //routes declaration
 app.use("/api/v1/auth", authRoute);
 app.use("/api/v1", userRoute);
-app.use("/api/v1/chat", chatRoute);
+app.use("/api/v1", chatRoute);
 
 app.use(errorMiddleware);
 

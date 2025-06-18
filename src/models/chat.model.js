@@ -17,6 +17,8 @@ const schema = new Schema(
       },
     },
 
+    description: String,
+
     lastMessage: {
       type: Types.ObjectId,
       ref: "Message",
