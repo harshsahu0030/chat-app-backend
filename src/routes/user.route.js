@@ -21,13 +21,6 @@ import {
 
 const router = express.Router();
 
-router.route("/test").get((req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "backend API is working",
-  });
-});
-
 router.route("/users").get(verifyJWT, getUsers);
 
 router
