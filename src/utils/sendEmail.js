@@ -19,6 +19,7 @@ export const sendEmail = async ({ email, subject, text }) => {
 
   try {
     await transporter.sendMail(mailOptions);
+    return true;
   } catch (error) {
     throw new ApiError(500, `Email send failed with error: ${error}`);
   }

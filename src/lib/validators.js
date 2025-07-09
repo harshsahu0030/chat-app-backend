@@ -45,17 +45,12 @@ export const getUserValidator = () => [
   param("id", "Please Enter User ID").notEmpty(),
 ];
 
-export const sendRequestValidator = () => [
+export const userIdVatidator = () => [
   body("userId", "Please Enter User ID").notEmpty(),
 ];
-export const acceptRequestValidator = () => [
-  body("userId", "Please Enter User ID").notEmpty(),
-];
-export const rejectRequestValidator = () => [
-  body("userId", "Please Enter User ID").notEmpty(),
-];
-export const removeFriendValidator = () => [
-  body("userId", "Please Enter User ID").notEmpty(),
+
+export const chatIdValiadator = () => [
+  body("chatId", "Please Enter Chat ID").notEmpty(),
 ];
 
 export const createGroupValidator = () => [
@@ -65,17 +60,4 @@ export const createGroupValidator = () => [
     .withMessage("Please Enter Members")
     .isArray({ min: 2, max: 100 })
     .withMessage("Members must be 2-100"),
-];
-
-const addMemberValidator = () => [
-  body("chatId", "Please Enter Chat ID").notEmpty(),
-  body("members")
-    .notEmpty()
-    .withMessage("Please Enter Members")
-    .isArray({ min: 1, max: 97 })
-    .withMessage("Members must be 1-97"),
-];
-
-const adminLoginValidator = () => [
-  body("secretKey", "Please Enter Secret Key").notEmpty(),
 ];

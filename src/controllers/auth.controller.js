@@ -71,7 +71,7 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
 
   return res
     .status(200)
-    .json(new ApiResponse(200, { user }, "User verified successfully"));
+    .json(new ApiResponse(200, null, "User verified successfully"));
 });
 
 export const loginUser = asyncHandler(async (req, res, next) => {
@@ -95,7 +95,7 @@ export const loginUser = asyncHandler(async (req, res, next) => {
 
   // Check if user is verified
   if (!user.isVerified) {
-    await resentVerifyUser(res, user);
+    return await resentVerifyUser(res, user);
   }
 
   // Check if password is correct
@@ -110,8 +110,13 @@ export const loginUser = asyncHandler(async (req, res, next) => {
 
   return res
     .status(200)
-    .cookie("accessToken", accessToken)
-    .json(new ApiResponse(200, { user }, "Login successful"));
+    .cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    })
+    .json(new ApiResponse(200, { user }, `Welcome Back! ${user.name}`));
 });
 
 export const logoutUser = asyncHandler(async (req, res) => {
@@ -131,34 +136,33 @@ export const getMyProfile = asyncHandler(async (req, res, next) => {
 
   return res
     .status(200)
-    .json(new ApiResponse(200, user, "User profile fetched successfully"));
+    .json(new ApiResponse(200, { user }, "User profile fetched successfully"));
 });
 
 export const updateMyProfile = asyncHandler(async (req, res, next) => {
-  if (req.files?.avatar?.[0]?.path) {
+  if (req.body.avatar) {
     if (req.user.avatar?.public_id) {
       await destroyOnCloudinary(req.user.avatar?.public_id);
     }
-
-    let result = await uploadOnCloudinary(req.files?.avatar[0]?.path);
+    let result = await uploadOnCloudinary(req.body.avatar);
 
     req.body.avatar = {
-      public_id: result.public_id,
-      url: result.secure_url,
+      public_id: result?.public_id,
+      url: result?.secure_url,
     };
   }
 
-  let user = await User.findByIdAndUpdate(req.user._id, req.body, {
+  const user = await User.findByIdAndUpdate(req.user, req.body, {
     new: true,
-    runValidators: true,
-    useFindAndModify: false,
   });
 
-  res.status(200).json(new ApiResponse(200, user, "User profile updated"));
+  if (!user) return next(new ApiError(404, "User not found"));
+
+  res.status(200).json(new ApiResponse(200, { user }, "User profile updated"));
 });
 
 export const forgotPassword = asyncHandler(async (req, res, next) => {
-  const { email } = req.body;   
+  const { email } = req.body;
 
   // Validate input
   if (!email) {
@@ -179,7 +183,7 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
   const { token } = req.params;
   const { password, confirmPassword } = req.body;
 
-  // Check if passwords match       
+  // Check if passwords match
   if (password !== confirmPassword) {
     return next(new ApiError(400, "Passwords do not match"));
   }

@@ -10,7 +10,6 @@ import {
   verifyUser,
 } from "../controllers/auth.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
-import { upload } from "../middlewares/multer.middleware.js";
 import {
   forgotPasswordValidator,
   loginValidator,
@@ -32,16 +31,7 @@ router
 
 router.route("/login").post(loginValidator(), validateHandler, loginUser);
 
-router.route("/profile/update").put(
-  verifyJWT,
-  upload.fields([
-    {
-      name: "avatar",
-      maxCount: 1,
-    },
-  ]),
-  updateMyProfile
-);
+router.route("/profile/update").put(verifyJWT, updateMyProfile);
 
 router
   .route("/password/forgot")

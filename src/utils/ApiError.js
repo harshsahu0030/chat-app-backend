@@ -1,3 +1,4 @@
+// create class to handle errors in api request and response
 class ApiError extends Error {
   constructor(
     statusCode,

@@ -12,7 +12,7 @@ export const verfifyUser = async (res, user) => {
   const text = `Hello ${user.name},\n\nPlease verify your email address by clicking the link below:\n${verificationLink}\n\nThank you!`;
 
   // Resend verification email
-  await sendEmail({
+  const send = await sendEmail({
     email: user.email,
     subject,
     text,
@@ -35,12 +35,12 @@ export const resentVerifyUser = async (res, user) => {
   const subject =
     "Please verify your email address by clicking the link below:";
 
-  const verificationLink = `${process.env.CLIENT_URL}/verify/${token}`;
+  const verificationLink = `${process.env.CLIENT_URL}/auth/verify/${token}`;
 
   const text = `Hello ${user.name},\n\nPlease verify your email address by clicking the link below:\n${verificationLink}\n\nThank you!`;
 
   // Resend verification email
-  await sendEmail({
+  const send = await sendEmail({
     email: user.email,
     subject,
     text,
@@ -51,7 +51,7 @@ export const resentVerifyUser = async (res, user) => {
     .json(
       new ApiResponse(
         200,
-        null,
+        { user: null },
         "Email resent! Please verify your email address."
       )
     );
@@ -62,12 +62,12 @@ export const forgotPasswordUser = async (res, user) => {
 
   const subject = "Please reset your password by clicking the link below:";
 
-  const resetLink = `${process.env.CLIENT_URL}/reset-password/${token}`;
+  const resetLink = `${process.env.CLIENT_URL}/auth/reset-password/${token}`;
 
   const text = `Hello ${user.name},\n\nPlease reset your password by clicking the link below:\n${resetLink}\n\nThank you!`;
 
   // Send password reset email
-  await sendEmail({
+  const send = await sendEmail({
     email: user.email,
     subject,
     text,

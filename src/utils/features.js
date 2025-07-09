@@ -27,12 +27,27 @@ class ApiFeatures {
     this.query = this.query.find({ ...keyword });
     return this;
   }
+  group() {
+    const group = this.queryStr.group
+      ? {
+          $or: [
+            {
+              isGroupChat: {
+                $regex: this.queryStr.group,
+                $options: "i",
+              },
+            },
+          ],
+        }
+      : {};
 
-  pagination(resultPerPage = 10) {
+    this.query = this.query.find({ ...group });
+    return this;
+  }
+
+  pagination(resultPerPage = 1) {
     const currentPage = Number(this.queryStr.page) || 1;
-
     const skip = resultPerPage * (currentPage - 1);
-
     this.query = this.query.limit(resultPerPage).skip(skip);
 
     return this;

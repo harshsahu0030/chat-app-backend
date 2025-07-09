@@ -23,6 +23,15 @@ const schema = new Schema(
       required: true,
     },
 
+    readBy: [
+      {
+        type: Types.ObjectId,
+        ref: "User",
+        required: true,
+        unique: true,
+      },
+    ],
+
     chat: {
       type: Types.ObjectId,
       ref: "Chat",

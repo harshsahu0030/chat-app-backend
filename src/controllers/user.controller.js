@@ -6,6 +6,8 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import ApiFeatures from "../utils/features.js";
 
 export const getUsers = asyncHandler(async (req, res, next) => {
+  const resultPerPage = 20;
+
   let apiFeatures = new ApiFeatures(
     User.find(
       { _id: { $ne: req.user._id } },
@@ -14,9 +16,18 @@ export const getUsers = asyncHandler(async (req, res, next) => {
     req.query
   ).search();
 
+  const filteredUsers = await apiFeatures.query.clone().countDocuments();
+  const totalPages = Math.ceil(filteredUsers / resultPerPage);
+
+  apiFeatures.pagination(resultPerPage);
+
   let users = await apiFeatures.query;
 
-  return res.status(200).json(new ApiResponse(200, users, "User fetched"));
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, { totalPages, filteredUsers, users }, "User fetched")
+    );
 });
 
 export const getUserById = asyncHandler(async (req, res, next) => {
@@ -35,27 +46,46 @@ export const getUserById = asyncHandler(async (req, res, next) => {
     }
   );
 
-  const relation = await Friend.findOne({ user: req.user._id }).lean();
-
-  let status = "none";
-  if (relation?.friends.includes(userId)) {
-    status = "friend";
-  } else if (relation?.requests.includes(userId)) {
-    status = "request";
-  } else if (relation?.sendRequests.includes(userId)) {
-    status = "sendRequest";
-  }
-
   if (!user) {
     return next(new ApiError(404, "User not found"));
   }
 
   return res
     .status(200)
-    .json(new ApiResponse(200, { user, status }, "User fetched successfully"));
+    .json(new ApiResponse(200, { user }, "User fetched successfully"));
+});
+
+export const getRelation = asyncHandler(async (req, res, next) => {
+  const userId = req.params.id;
+
+  const relation = await Friend.findOne({ user: req.user._id }).lean();
+
+  let status = "none";
+
+  if (relation) {
+    const userIdStr = userId.toString();
+
+    if (userIdStr === req.user._id.toString()) {
+      status = "me";
+    } else if (relation.friends?.some((id) => id.toString() === userIdStr)) {
+      status = "friend";
+    } else if (relation.requests?.some((id) => id.toString() === userIdStr)) {
+      status = "request";
+    } else if (
+      relation.sendRequests?.some((id) => id.toString() === userIdStr)
+    ) {
+      status = "sendRequest";
+    }
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { status }, "Relation fetched successfully"));
 });
 
 export const getFriendsList = asyncHandler(async (req, res, next) => {
+  const resultPerPage = 7;
+
   const friendDoc = await Friend.findOne({ user: req.user._id }).lean();
 
   if (!friendDoc || !friendDoc.friends?.length) {
@@ -70,26 +100,47 @@ export const getFriendsList = asyncHandler(async (req, res, next) => {
     req.query
   ).search();
 
+  const filteredUsers = await apiFeatures.query.clone().countDocuments();
+  const totalPages = Math.ceil(filteredUsers / resultPerPage);
+
+  apiFeatures.pagination(resultPerPage);
+
   const friends = await apiFeatures.query;
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, friends, "Friends fetched successfully"));
-});
-
-export const getFriendRequests = asyncHandler(async (req, res, next) => {
-  const friendRequests = await Friend.find({
-    user: req.user._id,
-  })
-    .populate("requests", "name username avatar")
-    .lean();
 
   return res
     .status(200)
     .json(
       new ApiResponse(
         200,
-        friendRequests,
+        { totalPages, filteredUsers, friends },
+        "Friends fetched successfully"
+      )
+    );
+});
+
+export const getFriendRequests = asyncHandler(async (req, res, next) => {
+  const resultPerPage = 7;
+
+  let apiFeatures = new ApiFeatures(
+    Friend.find({ user: req.user._id } , {requests: 1})
+      .lean()
+      .populate("requests", "name username avatar"),
+    req.query
+  );
+
+  const filteredUsers = await apiFeatures.query.clone().countDocuments();
+  const totalPages = Math.ceil(filteredUsers / resultPerPage);
+
+  apiFeatures.pagination(resultPerPage);
+
+  let friendRequests = await apiFeatures.query;
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { totalPages, filteredUsers, friendRequests },
         "Friend requests fetched successfully"
       )
     );
@@ -127,6 +178,40 @@ export const sendFriendRequest = asyncHandler(async (req, res, next) => {
   }
 
   return res.status(200).json(new ApiResponse(200, null, "Request sent"));
+});
+
+export const cancelRequest = asyncHandler(async (req, res, next) => {
+  const { userId } = req.body;
+
+  if (userId === req.user._id.toString()) {
+    return next(
+      new ApiError(400, "You cannot cancel a friend request to yourself")
+    );
+  }
+
+  const userDoc = await Friend.findOneAndUpdate(
+    {
+      user: req.user._id,
+      friends: { $ne: userId },
+    },
+    { $pull: { sendRequests: userId } },
+    { new: true, upsert: true }
+  );
+
+  const friendDoc = await Friend.findOneAndUpdate(
+    {
+      user: userId,
+      friends: { $ne: req.user._id },
+    },
+    { $pull: { requests: req.user._id } },
+    { new: true, upsert: true }
+  );
+
+  if (!friendDoc || !userDoc) {
+    return next(new ApiError(500, "Failed to cancel"));
+  }
+
+  return res.status(200).json(new ApiResponse(200, null, "Request cancelled"));
 });
 
 export const acceptFriendRequest = asyncHandler(async (req, res, next) => {
@@ -218,7 +303,7 @@ export const removeFriend = asyncHandler(async (req, res, next) => {
     return next(new ApiError(400, "You cannot remove yourself as a friend"));
   }
 
-  const userDoc = await Friend.findOneAndUpdate(
+  await Friend.findOneAndUpdate(
     { user: req.user._id },
     {
       $pull: { friends: userId },
@@ -226,7 +311,7 @@ export const removeFriend = asyncHandler(async (req, res, next) => {
     { new: true }
   );
 
-  const friendDoc = await Friend.findOneAndUpdate(
+  await Friend.findOneAndUpdate(
     { user: userId },
     {
       $pull: { friends: req.user._id },
@@ -234,11 +319,7 @@ export const removeFriend = asyncHandler(async (req, res, next) => {
     { new: true }
   );
 
-  if (!friendDoc || userDoc) {
-    return next(new ApiError(500, "Failed to remove friend"));
-  }
-
   return res
     .status(200)
-    .json(new ApiResponse(200, friendDoc, "Friend removed successfully"));
+    .json(new ApiResponse(200, null, "Friend removed successfully"));
 });

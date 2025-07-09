@@ -1,99 +1,177 @@
+import { populate } from "dotenv";
 import { Chat } from "../models/chat.model.js";
 import { Friend } from "../models/friend.model.js";
+import { Message } from "../models/message.model.js";
 import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import ApiFeatures from "../utils/features.js";
+import { v4 as uuid } from "uuid";
+import { emitEvent } from "../lib/helper.js";
+import { NEW_MESSAGE, NEW_MESSAGE_ALERT } from "../constants.js";
 
-export const getChats = asyncHandler(async (req, res, next) => {
+export const getChats = asyncHandler(async (req, res) => {
   const { group, keyword } = req.query;
-  const searchRegex = new RegExp(keyword, "i");
+  const searchRegex = keyword ? new RegExp(keyword, "i") : null;
+  const resultPerPage = 20;
+  const userId = req.user._id;
 
-  let chats = await Chat.find({
-    members: { $in: [{ _id: req.user._id }] },
-  })
-    .countDocuments()
-    .lean();
-
-  if (chats <= 0) {
-    return res.status(200).json(new ApiResponse(200, [], "No Chats found"));
-  }
-
+  // Step 1: If keyword is provided and group = false
   if (keyword && !group) {
-    const matchingUsers = await User.find(
-      {
-        $or: [
-          { username: { $regex: searchRegex } },
-          { name: { $regex: searchRegex } },
-        ],
-      },
-      { _id: 1 }
-    ).lean();
-    if (matchingUsers.length <= 0) {
-      return res.status(200).json(new ApiResponse(200, [], "No Chats found"));
-    }
+    let matchingUsers = new ApiFeatures(User.find().lean(), req.query).search();
+    let users = await matchingUsers.query;
+    const matchingUserIds = users.map((u) => u._id);
 
-    const matchingUserIds = matchingUsers.map((u) => u._id);
+    // User-to-user chats
+    let apiFeatures = new ApiFeatures(
+      Chat.find({
+        isGroupChat: false,
+        members: userId,
+        members: { $in: matchingUserIds },
+      })
+        .populate("members", "username name avatar")
+        .populate("lastMessage")
+        .sort({ updatedAt: -1 })
+        .lean(),
+      req.query
+    );
 
-    chats = await Chat.find({
-      $and: [
-        { members: { $elemMatch: { $eq: req.user._id } }, isGroupChat: false }, // only chats you belong to
-        {
-          $or: [{ members: { $in: matchingUserIds } }],
-        },
-      ],
-    })
-      .populate("members", "username name avatar")
-      .populate("lastMessage")
-      .sort({ updatedAt: -1 })
-      .lean();
+    const filteredUsers = await apiFeatures.query.clone().countDocuments();
+    const totalPages = Math.ceil(filteredUsers / resultPerPage);
 
-    return res.status(200).json(new ApiResponse(200, chats, "Chats fetched"));
-  }
+    apiFeatures.pagination(resultPerPage);
 
-  if (group === "true") {
-    chats = await Chat.find({
-      members: { $in: [{ _id: req.user._id }] },
-      groupName: searchRegex,
-    })
-      .populate("members", "username name avatar")
-      .populate("lastMessage")
-      .sort({ updatedAt: -1 })
-      .lean();
+    let chats = await apiFeatures.query;
 
     return res
       .status(200)
-      .json(new ApiResponse(200, chats, "Chats fetched successfully"));
+      .json(
+        new ApiResponse(
+          200,
+          { filteredUsers, totalPages, chats },
+          "Filtered chats fetched successfully"
+        )
+      );
   }
 
-  chats = await Chat.find({
-    members: { $in: [{ _id: req.user._id }] },
-  })
-    .populate("members", "username name avatar")
-    .populate("lastMessage")
-    .sort({ updatedAt: -1 })
-    .lean();
+  // Step 2: If only group chats are requested
+  if (group === "true") {
+    let apiFeatures = new ApiFeatures(
+      Chat.find({
+        isGroupChat: true,
+        members: userId,
+        ...(keyword && { groupName: { $regex: searchRegex } }),
+      })
+        .populate("members", "username name avatar")
+        .populate("lastMessage")
+        .sort({ updatedAt: -1 })
+        .lean(),
+      req.query
+    );
+
+    const filteredUsers = await apiFeatures.query.clone().countDocuments();
+    const totalPages = Math.ceil(filteredUsers / resultPerPage);
+
+    apiFeatures.pagination(resultPerPage);
+
+    let chats = await apiFeatures.query;
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { filteredUsers, totalPages, chats },
+          "Group chats fetched successfully"
+        )
+      );
+  }
+
+  // Step 3: Default — fetch all chats for user
+  let apiFeatures = new ApiFeatures(
+    Chat.find({
+      members: userId,
+    })
+      .populate("members", "username name avatar")
+      .populate("lastMessage")
+      .sort({ updatedAt: -1 })
+      .lean(),
+    req.query
+  );
+
+  const filteredUsers = await apiFeatures.query.clone().countDocuments();
+  const totalPages = Math.ceil(filteredUsers / resultPerPage);
+
+  apiFeatures.pagination(resultPerPage);
+
+  let chats = await apiFeatures.query;
 
   return res
     .status(200)
-    .json(new ApiResponse(200, chats, "Chats fetched successfully"));
+    .json(
+      new ApiResponse(
+        200,
+        { filteredUsers, totalPages, chats },
+        "All chats fetched successfully"
+      )
+    );
 });
 
-export const getCHatById = asyncHandler(async (req, res, next) => {
+export const getChatById = asyncHandler(async (req, res, next) => {
   const chatId = req.params.id;
 
-  const chat = await Chat.findById(chatId)
+  let chat;
+  let user;
+
+  chat = await Chat.findById(chatId)
     .populate("members", "username name avatar")
     .populate("lastMessage")
     .lean();
 
+  if (chat) {
+    if (chat.isGroupChat) {
+      return res
+        .status(200)
+        .json(new ApiResponse(200, chat, "Chat fetched successfully"));
+    }
+
+    user = await User.findById(
+      chat.members.find((m) => m._id.toString() !== req.user._id.toString())
+    )
+      .lean()
+      .select("username name avatar");
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { chat, user }, "Chat not found"));
+  }
+
   if (!chat) {
-    return next(new ApiError(404, "Chat not found"));
+    user = await User.findById(chatId).lean();
+
+    if (!user) {
+      return next(new ApiError(404, "User not found"));
+    }
+
+    chat = await Chat.findOne({
+      isGroupChat: false,
+      members: { $in: [{ _id: req.user._id }, { _id: chatId }] },
+    })
+      .populate("members", "username name avatar")
+      .populate("lastMessage")
+      .lean();
+  }
+
+  if (!chat) {
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { chat, user }, "Chat not found"));
   }
 
   return res
     .status(200)
-    .json(new ApiResponse(200, chat, "Chat fetched successfully"));
+    .json(new ApiResponse(200, { chat, user }, "Chat fetched successfully"));
 });
 
 export const createGroupChat = asyncHandler(async (req, res, next) => {
@@ -132,10 +210,6 @@ export const createGroupChat = asyncHandler(async (req, res, next) => {
 
 export const updateGroup = asyncHandler(async (req, res, next) => {
   const { chatId, groupName, avatar, description } = req.body;
-
-  const friends = await Friend.findOne({
-    user: req.user._id,
-  }).lean();
 
   const groupChat = await Chat.findOneAndUpdate(
     {
@@ -263,4 +337,111 @@ export const kickUserFromGroup = asyncHandler(async (req, res, next) => {
   return res
     .status(200)
     .json(new ApiResponse(200, null, "Member kick successfully"));
+});
+
+export const getMessages = asyncHandler(async (req, res, next) => {
+  const chatId = req.params.id;
+
+  const resultPerPage = 10;
+
+  let apiFeatures = new ApiFeatures(
+    Message.find({ chat: chatId })
+      .populate("sender", "username name avatar")
+      .sort({ createdAt: -1 })
+      .lean(),
+    req.query
+  ).search();
+
+  const filteredUsers = await apiFeatures.query.clone().countDocuments();
+  const totalPages = Math.ceil(filteredUsers / resultPerPage);
+
+  apiFeatures.pagination(resultPerPage);
+
+  let messages = await apiFeatures.query;
+
+  const messageIds = messages.map((msg) => msg._id);
+
+  // Mark as read (add userId to readBY if not present)
+  if (messageIds.length > 0) {
+    await Message.updateMany(
+      { _id: { $in: messageIds } },
+      { $addToSet: { readBY: req.user._id } }
+    );
+  }
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { totalPages, filteredUsers, messages },
+        "Messages fetched successfully"
+      )
+    );
+});
+
+export const sendMessage = asyncHandler(async (req, res, next) => {
+  let { id, message } = req.body;
+  let user = req.user;
+  let chat = await Chat.findById(id);
+
+  if (!chat) {
+    let otherUser = await User.findById(id);
+
+    if (!otherUser) {
+      return next(new ApiError(404, "User not found"));
+    }
+
+    chat = await Chat.findOne({
+      isGroupChat: false,
+      members: { $all: [user._id, otherUser._id] },
+    });
+  }
+
+  if (!chat) {
+    chat = Chat.create({
+      isGroupChat: false,
+      createdBy: user._id,
+      admin: user,
+      members: [user._id, otherUser._id],
+    });
+  }
+
+  const messageForRealTime = {
+    content: message,
+    _id: uuid(),
+    sender: {
+      _id: user._id,
+      name: user.name,
+    },
+    chat: chat._id,
+    createdAt: new Date().toISOString(),
+  };
+
+  const messageForDB = {
+    content: message,
+    sender: user._id,
+    chat: chat._id,
+  };
+
+  const finalMessage = await Message.create(messageForDB);
+  chat.lastMessage = finalMessage._id;
+  await chat.save();
+
+  if (!chat || !finalMessage) {
+    return next(new ApiError(500, "Unable to send message"));
+  }
+
+  emitEvent(req, NEW_MESSAGE_ALERT, chat.members, { chat: chat._id });
+
+  emitEvent(req, NEW_MESSAGE, chat.members, {
+    message: messageForRealTime,
+    chatId: chat._id,
+  });
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, { messageId: finalMessage._id }, "Message Send")
+    );
 });
