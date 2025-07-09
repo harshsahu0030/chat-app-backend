@@ -21,7 +21,10 @@ export const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173", // frontend origin
+    origin: [
+      "http://localhost:5173",
+      "https://chat-app-frontend-nbt4.onrender.com",
+    ], // frontend origin
     credentials: true,
     withCredentials: true,
   },
@@ -40,7 +43,10 @@ app.use(express.static("public"));
 app.use(cookieParser());
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      "https://chat-app-frontend-nbt4.onrender.com",
+    ],
     withCredentials: true,
     credentials: true,
   })
