@@ -1,7 +1,6 @@
-import { populate } from "dotenv";
 import { Chat } from "../models/chat.model.js";
 import { Friend } from "../models/friend.model.js";
-import { Message } from "../models/message.model.js";
+import { Message } from "../models/messages.model.js";
 import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -344,13 +343,33 @@ export const getMessages = asyncHandler(async (req, res, next) => {
 
   const resultPerPage = 10;
 
+  let chat = await Chat.findById(chatId);
+
+  if (!chat) {
+    chat = await Chat.findOne({
+      members: { $in: [req.user._id, chat] },
+    });
+  }
+
+  if (!chat) {
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { totalPages: 0, filteredUsers: 0, messages: 0 },
+          "Messages fetched successfully"
+        )
+      );
+  }
+
   let apiFeatures = new ApiFeatures(
-    Message.find({ chat: chatId })
+    Message.find({ chat: chat._id })
       .populate("sender", "username name avatar")
       .sort({ createdAt: -1 })
       .lean(),
     req.query
-  ).search();
+  );
 
   const filteredUsers = await apiFeatures.query.clone().countDocuments();
   const totalPages = Math.ceil(filteredUsers / resultPerPage);
@@ -358,16 +377,6 @@ export const getMessages = asyncHandler(async (req, res, next) => {
   apiFeatures.pagination(resultPerPage);
 
   let messages = await apiFeatures.query;
-
-  const messageIds = messages.map((msg) => msg._id);
-
-  // Mark as read (add userId to readBY if not present)
-  if (messageIds.length > 0) {
-    await Message.updateMany(
-      { _id: { $in: messageIds } },
-      { $addToSet: { readBY: req.user._id } }
-    );
-  }
 
   return res
     .status(200)
@@ -383,10 +392,12 @@ export const getMessages = asyncHandler(async (req, res, next) => {
 export const sendMessage = asyncHandler(async (req, res, next) => {
   let { id, message } = req.body;
   let user = req.user;
+  let otherUser;
+
   let chat = await Chat.findById(id);
 
   if (!chat) {
-    let otherUser = await User.findById(id);
+    otherUser = await User.findById(id);
 
     if (!otherUser) {
       return next(new ApiError(404, "User not found"));
@@ -399,7 +410,7 @@ export const sendMessage = asyncHandler(async (req, res, next) => {
   }
 
   if (!chat) {
-    chat = Chat.create({
+    chat = await Chat.create({
       isGroupChat: false,
       createdBy: user._id,
       admin: user,
@@ -432,16 +443,19 @@ export const sendMessage = asyncHandler(async (req, res, next) => {
     return next(new ApiError(500, "Unable to send message"));
   }
 
-  emitEvent(req, NEW_MESSAGE_ALERT, chat.members, { chat: chat._id });
+  let realTimeChat = await Chat.findById(chat._id)
+    .populate("members", "username name avatar")
+    .populate("lastMessage")
+    .lean();
+
+  emitEvent(req, NEW_MESSAGE_ALERT, chat.members, { chat: realTimeChat });
 
   emitEvent(req, NEW_MESSAGE, chat.members, {
     message: messageForRealTime,
-    chatId: chat._id,
+    chatId: id,
   });
 
   return res
     .status(200)
-    .json(
-      new ApiResponse(200, { messageId: finalMessage._id }, "Message Send")
-    );
+    .json(new ApiResponse(200, { message: finalMessage }, "Message Send"));
 });

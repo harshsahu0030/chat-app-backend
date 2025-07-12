@@ -28,12 +28,12 @@ class ApiFeatures {
     return this;
   }
   group() {
-    const group = this.queryStr.group
+    const group = this.queryStr.keyword
       ? {
           $or: [
             {
-              isGroupChat: {
-                $regex: this.queryStr.group,
+              groupName: {
+                $regex: this.queryStr.keyword,
                 $options: "i",
               },
             },
@@ -45,7 +45,7 @@ class ApiFeatures {
     return this;
   }
 
-  pagination(resultPerPage = 1) {
+  pagination(resultPerPage = 10) {
     const currentPage = Number(this.queryStr.page) || 1;
     const skip = resultPerPage * (currentPage - 1);
     this.query = this.query.limit(resultPerPage).skip(skip);

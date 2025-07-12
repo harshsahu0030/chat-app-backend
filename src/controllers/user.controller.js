@@ -84,7 +84,7 @@ export const getRelation = asyncHandler(async (req, res, next) => {
 });
 
 export const getFriendsList = asyncHandler(async (req, res, next) => {
-  const resultPerPage = 7;
+  const resultPerPage = 20;
 
   const friendDoc = await Friend.findOne({ user: req.user._id }).lean();
 
@@ -119,10 +119,10 @@ export const getFriendsList = asyncHandler(async (req, res, next) => {
 });
 
 export const getFriendRequests = asyncHandler(async (req, res, next) => {
-  const resultPerPage = 7;
+  const resultPerPage = 20;
 
   let apiFeatures = new ApiFeatures(
-    Friend.find({ user: req.user._id } , {requests: 1})
+    Friend.find({ user: req.user._id }, { requests: 1 })
       .lean()
       .populate("requests", "name username avatar"),
     req.query
