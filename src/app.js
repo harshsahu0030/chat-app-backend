@@ -76,7 +76,6 @@ io.use((socket, next) => {
 
 // Socket authentication
 export const userSocketIDs = new Map();
-export const onlineUsers = new Set();
 
 // Socket event handling
 io.on("connection", (socket) => {
@@ -95,7 +94,6 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     userSocketIDs.delete(user._id.toString());
-    onlineUsers.delete(user._id.toString());
   });
 });
 

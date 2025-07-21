@@ -3,6 +3,7 @@ import { hash, compare } from "bcrypt";
 import validator from "validator";
 import jwt from "jsonwebtoken";
 
+
 const schema = new Schema(
   {
     name: {

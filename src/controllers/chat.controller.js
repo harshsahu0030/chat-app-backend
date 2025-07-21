@@ -27,7 +27,7 @@ export const getChats = asyncHandler(async (req, res) => {
       Chat.find({
         isGroupChat: false,
         members: userId,
-        members: { $in: matchingUserIds },
+        members: { $all: matchingUserIds },
       })
         .populate("members", "username name avatar")
         .populate("lastMessage")
@@ -155,7 +155,7 @@ export const getChatById = asyncHandler(async (req, res, next) => {
 
     chat = await Chat.findOne({
       isGroupChat: false,
-      members: { $in: [{ _id: req.user._id }, { _id: chatId }] },
+      members: { $all: [req.user._id, chatId] },
     })
       .populate("members", "username name avatar")
       .populate("lastMessage")
@@ -213,7 +213,7 @@ export const updateGroup = asyncHandler(async (req, res, next) => {
   const groupChat = await Chat.findOneAndUpdate(
     {
       _id: chatId,
-      admin: { $in: [req.user._id] },
+      admin: { $all: [req.user._id] },
     },
     {
       groupName: groupName,
@@ -237,7 +237,7 @@ export const removeGroup = asyncHandler(async (req, res, next) => {
 
   const chat = await Chat.findOneAndDelete({
     _id: chatId,
-    admin: { $in: [req.user._id] },
+    admin: { $all: [req.user._id] },
   });
 
   if (!chat) {
@@ -288,7 +288,7 @@ export const addMemberInGroup = asyncHandler(async (req, res, next) => {
   let chat = await Chat.findOneAndUpdate(
     {
       _id: chatId,
-      admin: { $in: [req.user._id] },
+      admin: { $all: [req.user._id] },
     },
     {
       $addToSet: { members: user._id },
@@ -321,7 +321,7 @@ export const kickUserFromGroup = asyncHandler(async (req, res, next) => {
   let chat = await Chat.findOneAndUpdate(
     {
       _id: chatId,
-      admin: { $in: [req.user._id] },
+      admin: { $all: [req.user._id] },
     },
     {
       $pull: { members: user._id },
@@ -347,7 +347,7 @@ export const getMessages = asyncHandler(async (req, res, next) => {
 
   if (!chat) {
     chat = await Chat.findOne({
-      members: { $in: [req.user._id, chat] },
+      members: { $all: [req.user._id, chat] },
     });
   }
 
